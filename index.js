@@ -37,27 +37,29 @@ client.once("clientReady", async () => {
         return;
     }
 
-    const sendKey = () => {
-        latestKey = generateKey(30);
+    const sendKey = async () => {
+        try {
+            const messages = await channel.messages.fetch({
+                limit: 100
+            });
 
-        channel.send(latestKey);
+            await channel.bulkDelete(messages, true);
 
-        console.log("Generated Key:", latestKey);
+            latestKey = generateKey(30);
+
+            await channel.send(latestKey);
+
+            console.log("Generated Key:", latestKey);
+        } catch (error) {
+            console.error(error);
+        }
     };
 
-    sendKey();
+    await sendKey();
 
-    setInterval(sendKey, 60 * 1000);
-});
-
-client.on("messageCreate", (message) => {
-    if (message.author.bot) return;
-
-    console.log(
-        "MESSAGE:",
-        message.channel.name,
-        "|",
-        message.content
+    setInterval(
+        sendKey,
+        6 * 60 * 60 * 1000
     );
 });
 
