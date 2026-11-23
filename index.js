@@ -7,8 +7,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 let latestKey = null;
+let rotationRunning = false;
 
-// Roblox API
 app.get("/", (req, res) => {
     res.send("Discord Key API is online!");
 });
@@ -31,7 +31,6 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log(`API running on port ${PORT}`);
 });
 
-// Generate a random 30-character key
 function generateKey(length = 30) {
     const chars =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -45,7 +44,6 @@ function generateKey(length = 30) {
     return key;
 }
 
-// Discord bot
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -67,7 +65,8 @@ client.once("clientReady", async () => {
                 c &&
                 c.name === "key" &&
                 c.isTextBased() &&
-                typeof c.send === "function"
+                typeof c.send === "function" &&
+                c.messages
             );
 
             if (channel) break;
@@ -80,65 +79,91 @@ client.once("clientReady", async () => {
 
         console.log(`Found channel: #${channel.name}`);
 
+        async function deleteAllMessages() {
+            console.log("Deleting previous messages...");
+
+            let before = undefined;
+            const fourteenDays = 14 * 24 * 60 * 60 * 1000;
+
+            while (true) {
+                const messages = await channel.messages.fetch({
+                    limit: 100,
+                    ...(before ? { before } : {})
+                });
+
+                if (messages.size === 0) {
+                    break;
+                }
+
+                before = messages.last().id;
+
+                const recentMessages = messages.filter(message =>
+                    Date.now() - message.createdTimestamp < fourteenDays
+                );
+
+                const oldMessages = messages.filter(message =>
+                    Date.now() - message.createdTimestamp >= fourteenDays
+                );
+
+                if (recentMessages.size > 0) {
+                    await channel.bulkDelete(recentMessages, true);
+                }
+
+                for (const message of oldMessages.values()) {
+                    await message.delete();
+                }
+
+                if (messages.size < 100) {
+                    break;
+                }
+            }
+
+            console.log("Finished deleting previous messages.");
+        }
+
         async function sendKey() {
+            if (rotationRunning) {
+                return;
+            }
+
+            rotationRunning = true;
+
             try {
-                console.log("Deleting previous messages...");
+                try {
+                    await deleteAllMessages();
+                } catch (error) {
+                    console.error("Message deletion failed:", error);
+                }
 
-                // Delete all messages in batches of up to 100.
-                // Discord cannot bulk-delete messages older than 14 days.
-                let messages;
-
-                do {
-                    messages = await channel.messages.fetch({
-                        limit: 100
-                    });
-
-                    const recentMessages = messages.filter(
-                        message =>
-                            Date.now() - message.createdTimestamp <
-                            14 * 24 * 60 * 60 * 1000
-                    );
-
-                    if (recentMessages.size > 0) {
-                        await channel.bulkDelete(recentMessages, true);
-                    }
-
-                    // Stop if there are no more messages to fetch.
-                    if (messages.size < 100) break;
-
-                    // Stop if all fetched messages are too old.
-                    if (recentMessages.size === 0) break;
-
-                } while (messages.size === 100);
-
-                // Generate and post the new key
                 const newKey = generateKey(30);
+
                 await channel.send(newKey);
 
-                // Update the API key
                 latestKey = newKey;
 
-                console.log("Generated Key:", latestKey);
+                console.log("New key generated successfully.");
+                console.log("Key rotation completed.");
 
             } catch (error) {
                 console.error("Key generation failed:", error);
+            } finally {
+                rotationRunning = false;
             }
         }
 
-        // Generate the first key immediately
         await sendKey();
 
-        // Generate a new key every 6 hours
-        setInterval(sendKey, 6 * 60 * 60 * 1000);
+        setInterval(() => {
+            sendKey();
+        }, 30 * 1000);
 
-        console.log("6-hour key generation enabled.");
+        console.log("30-second key generation enabled.");
 
     } catch (error) {
         console.error("Discord setup error:", error);
     }
 });
 
-// Log in to Discord
 if (!process.env.TOKEN) {
     console.error("Missing TOKEN environment variable!");
 } else {
