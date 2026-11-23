@@ -65,8 +65,7 @@ client.once("clientReady", async () => {
                 c &&
                 c.name === "key" &&
                 c.isTextBased() &&
-                typeof c.send === "function" &&
-                c.messages
+                typeof c.send === "function"
             );
 
             if (channel) break;
@@ -80,29 +79,28 @@ client.once("clientReady", async () => {
         console.log(`Found channel: #${channel.name}`);
 
         async function deleteAllMessages() {
-            console.log("Deleting previous messages...");
-
             let before = undefined;
-            const fourteenDays = 14 * 24 * 60 * 60 * 1000;
 
             while (true) {
                 const messages = await channel.messages.fetch({
                     limit: 100,
-                    ...(before ? { before } : {})
+                    before
                 });
 
-                if (messages.size === 0) {
-                    break;
-                }
+                if (messages.size === 0) break;
 
-                before = messages.last().id;
+                const oldestMessage = messages.last();
 
-                const recentMessages = messages.filter(message =>
-                    Date.now() - message.createdTimestamp < fourteenDays
+                const recentMessages = messages.filter(
+                    message =>
+                        Date.now() - message.createdTimestamp <
+                        14 * 24 * 60 * 60 * 1000
                 );
 
-                const oldMessages = messages.filter(message =>
-                    Date.now() - message.createdTimestamp >= fourteenDays
+                const oldMessages = messages.filter(
+                    message =>
+                        Date.now() - message.createdTimestamp >=
+                        14 * 24 * 60 * 60 * 1000
                 );
 
                 if (recentMessages.size > 0) {
@@ -113,27 +111,21 @@ client.once("clientReady", async () => {
                     await message.delete();
                 }
 
-                if (messages.size < 100) {
-                    break;
-                }
-            }
+                before = oldestMessage.id;
 
-            console.log("Finished deleting previous messages.");
+                if (messages.size < 100) break;
+            }
         }
 
         async function sendKey() {
-            if (rotationRunning) {
-                return;
-            }
+            if (rotationRunning) return;
 
             rotationRunning = true;
 
             try {
-                try {
-                    await deleteAllMessages();
-                } catch (error) {
-                    console.error("Message deletion failed:", error);
-                }
+                console.log("Deleting previous messages...");
+
+                await deleteAllMessages();
 
                 const newKey = generateKey(30);
 
@@ -141,8 +133,7 @@ client.once("clientReady", async () => {
 
                 latestKey = newKey;
 
-                console.log("New key generated successfully.");
-                console.log("Key rotation completed.");
+                console.log("Generated new key:", latestKey);
 
             } catch (error) {
                 console.error("Key generation failed:", error);
@@ -153,11 +144,9 @@ client.once("clientReady", async () => {
 
         await sendKey();
 
-        setInterval(() => {
-            sendKey();
-        }, 30 * 1000);
+        setInterval(sendKey, 6 * 60 * 60 * 1000);
 
-        console.log("30-second key generation enabled.");
+        console.log("6-hour key generation enabled.");
 
     } catch (error) {
         console.error("Discord setup error:", error);
